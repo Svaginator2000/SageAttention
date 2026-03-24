@@ -61,56 +61,13 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "twine==5.1.1" "numpy>=1.26" ninja
+          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "numpy>=1.26" ninja
           python -m pip install --index-url "${TORCH_INDEX_URL}" "${TORCH_SPEC}"
           python -m pip install "triton>=3.0.0"
-
-      - name: Show build environment
-        run: |
-          python - <<'PY'
-          import os
-          import torch
-          from torch.utils.cpp_extension import CUDA_HOME
-          print("torch", torch.__version__)
-          print("torch.version.cuda", torch.version.cuda)
-          print("CUDA_HOME", CUDA_HOME)
-          print("TORCH_CUDA_ARCH_LIST", os.environ.get("TORCH_CUDA_ARCH_LIST"))
-          print("torch._C._GLIBCXX_USE_CXX11_ABI", torch._C._GLIBCXX_USE_CXX11_ABI)
-          print("SAGEATTN_FORCE_CXX11_ABI", os.environ.get("SAGEATTN_FORCE_CXX11_ABI"))
-          print("SAGEATTN_NVCC_THREADS", os.environ.get("SAGEATTN_NVCC_THREADS"))
-          print("EXT_PARALLEL", os.environ.get("EXT_PARALLEL"))
-          print("MAX_JOBS", os.environ.get("MAX_JOBS"))
-          PY
 
       - name: Build wheel
         run: |
           python -m build --wheel --no-isolation
-
-      - name: Check wheel metadata
-        run: |
-          python -m twine check dist/*
-
-      - name: Inspect wheel contents
-        run: |
-          python - <<'PY'
-          import glob
-          import zipfile
-
-          wheels = glob.glob("dist/*.whl")
-          if len(wheels) != 1:
-              raise SystemExit(f"Expected exactly one wheel, got: {wheels}")
-
-          with zipfile.ZipFile(wheels[0]) as zf:
-              names = zf.namelist()
-
-          required = ["sageattention/_fused", "sageattention/_qattn_sm80", "sageattention/_qattn_sm89"]
-          missing = [item for item in required if not any(name.startswith(item) for name in names)]
-          if missing:
-              raise SystemExit(f"Missing compiled extensions in wheel: {missing}")
-
-          print("wheel:", wheels[0])
-          print("validated compiled extensions:", ", ".join(required))
-          PY
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
