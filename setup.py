@@ -48,6 +48,10 @@ if not SKIP_CUDA_BUILD:
     # Supported NVIDIA GPU architectures.
     SUPPORTED_ARCHS = {"8.0", "8.6", "8.9", "9.0", "10.0", "12.0", "12.1"}
 
+    nvcc_threads = os.getenv("SAGEATTN_NVCC_THREADS", "8").strip()
+    if not nvcc_threads.isdigit() or int(nvcc_threads) < 1:
+        raise RuntimeError("SAGEATTN_NVCC_THREADS must be a positive integer.")
+
     # Compiler flags.
     CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
     NVCC_FLAGS = [
@@ -56,7 +60,7 @@ if not SKIP_CUDA_BUILD:
         "-U__CUDA_NO_HALF_OPERATORS__",
         "-U__CUDA_NO_HALF_CONVERSIONS__",
         "--use_fast_math",
-        "--threads=8",
+        f"--threads={nvcc_threads}",
         "-Xptxas=-v",
         "-diag-suppress=174",
     ]

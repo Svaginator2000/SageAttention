@@ -23,10 +23,12 @@ env:
   CUDA_VERSION: "13.0.2"
   TORCH_INDEX_URL: "https://download.pytorch.org/whl/cu130"
   TORCH_SPEC: "torch==2.10.*"
-  TORCH_CUDA_ARCH_LIST: "8.0;8.6;8.9;9.0+PTX"
+  TORCH_CUDA_ARCH_LIST: "8.9"
   SAGEATTN_FORCE_CXX11_ABI: "TRUE"
-  EXT_PARALLEL: "2"
-  MAX_JOBS: "4"
+  SAGEATTN_NVCC_THREADS: "2"
+  CXX_APPEND_FLAGS: "-g0"
+  EXT_PARALLEL: "1"
+  MAX_JOBS: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   FORCE_COLOR: "1"
 
@@ -59,7 +61,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "twine==5.1.1" ninja
+          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "twine==5.1.1" "numpy>=1.26" ninja
           python -m pip install --index-url "${TORCH_INDEX_URL}" "${TORCH_SPEC}"
           python -m pip install "triton>=3.0.0"
 
@@ -75,6 +77,9 @@ jobs:
           print("TORCH_CUDA_ARCH_LIST", os.environ.get("TORCH_CUDA_ARCH_LIST"))
           print("torch._C._GLIBCXX_USE_CXX11_ABI", torch._C._GLIBCXX_USE_CXX11_ABI)
           print("SAGEATTN_FORCE_CXX11_ABI", os.environ.get("SAGEATTN_FORCE_CXX11_ABI"))
+          print("SAGEATTN_NVCC_THREADS", os.environ.get("SAGEATTN_NVCC_THREADS"))
+          print("EXT_PARALLEL", os.environ.get("EXT_PARALLEL"))
+          print("MAX_JOBS", os.environ.get("MAX_JOBS"))
           PY
 
       - name: Build wheel
@@ -96,6 +101,6 @@ jobs:
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-py3.13-cxx11abi
+          name: wheels-py3.13-sm89-cxx11abi
           path: dist/*.whl
           if-no-files-found: error
