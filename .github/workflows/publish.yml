@@ -90,12 +90,26 @@ jobs:
         run: |
           python -m twine check dist/*
 
-      - name: Smoke test installed wheel
+      - name: Inspect wheel contents
         run: |
-          python -m pip install --force-reinstall dist/*.whl --no-deps
           python - <<'PY'
-          import sageattention
-          print(sageattention.__file__)
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          if len(wheels) != 1:
+              raise SystemExit(f"Expected exactly one wheel, got: {wheels}")
+
+          with zipfile.ZipFile(wheels[0]) as zf:
+              names = zf.namelist()
+
+          required = ["sageattention/_fused", "sageattention/_qattn_sm80", "sageattention/_qattn_sm89"]
+          missing = [item for item in required if not any(name.startswith(item) for name in names)]
+          if missing:
+              raise SystemExit(f"Missing compiled extensions in wheel: {missing}")
+
+          print("wheel:", wheels[0])
+          print("validated compiled extensions:", ", ".join(required))
           PY
 
       - name: Upload wheel artifact
