@@ -1,13 +1,110 @@
-name: Publish to PyPI
+name: Build and Publish Distributions
 
 on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish.yml"
+      - "setup.py"
+      - "pyproject.toml"
+      - "MANIFEST.in"
+      - "README.md"
+      - "sageattention/**"
+      - "csrc/**"
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
+env:
+  CUDA_VERSION: "13.0.2"
+  TORCH_INDEX_URL: "https://download.pytorch.org/whl/cu130"
+  TORCH_SPEC: "torch==2.10.*"
+  TORCH_CUDA_ARCH_LIST: "8.0;8.6;8.9;9.0+PTX"
+  EXT_PARALLEL: "2"
+  MAX_JOBS: "4"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  FORCE_COLOR: "1"
+
 jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
+  build-wheel:
+    name: Wheel py${{ matrix.python-version }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.30
+        with:
+          cuda: ${{ env.CUDA_VERSION }}
+
+      - name: Export CUDA_HOME
+        shell: bash
+        run: |
+          echo "CUDA_HOME=${CUDA_PATH}" >> "${GITHUB_ENV}"
+          echo "${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
+          "${CUDA_PATH}/bin/nvcc" -V
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "twine==5.1.1" ninja
+          python -m pip install --index-url "${TORCH_INDEX_URL}" "${TORCH_SPEC}"
+          python -m pip install "triton>=3.0.0"
+
+      - name: Show build environment
+        run: |
+          python - <<'PY'
+          import os
+          import torch
+          from torch.utils.cpp_extension import CUDA_HOME
+          print("torch", torch.__version__)
+          print("torch.version.cuda", torch.version.cuda)
+          print("CUDA_HOME", CUDA_HOME)
+          print("TORCH_CUDA_ARCH_LIST", os.environ.get("TORCH_CUDA_ARCH_LIST"))
+          PY
+
+      - name: Build wheel
+        run: |
+          python -m build --wheel --no-isolation
+
+      - name: Check wheel metadata
+        run: |
+          python -m twine check dist/*
+
+      - name: Smoke test installed wheel
+        run: |
+          python -m pip install --force-reinstall dist/*.whl --no-deps
+          python - <<'PY'
+          import sageattention
+          print(sageattention.__file__)
+          PY
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-py${{ matrix.python-version }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-sdist:
+    name: Source distribution
+    runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,26 +114,61 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Upgrade pip
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install "setuptools>=62,<75" "wheel>=0.38,<0.44" "packaging>=21,<24" "build==1.2.2.post1" "twine==5.1.1"
 
-      - name: Install build backend
-        run: |
-          python -m pip install build==1.2.1 twine==5.1.1 packaging
-
-      - name: Build sdist only
+      - name: Build sdist
         env:
           SAGEATTN_SKIP_CUDA_BUILD: "1"
         run: |
           python -m build --sdist
 
-      - name: Check distribution files
+      - name: Check source distribution metadata
         run: |
-          twine check dist/*
+          python -m twine check dist/*
 
-      - name: Publish to PyPI
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    needs:
+      - build-wheel
+      - build-sdist
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install twine
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "twine==5.1.1"
+
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
+
+      - name: Download sdist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: Publish distributions
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
