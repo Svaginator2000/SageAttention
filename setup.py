@@ -28,6 +28,7 @@ SKIP_CUDA_BUILD = (
     os.getenv("SAGEATTN_SKIP_CUDA_BUILD", "0").upper() in {"1", "TRUE", "YES"}
     or ("sdist" in sys.argv)
 )
+FORCE_CXX11_ABI = os.getenv("SAGEATTN_FORCE_CXX11_ABI", "0").upper() in {"1", "TRUE", "YES"}
 
 ext_modules = []
 cmdclass = {}
@@ -67,6 +68,9 @@ if not SKIP_CUDA_BUILD:
     nvcc_append = os.getenv("NVCC_APPEND_FLAGS", "").strip()
     if nvcc_append:
         NVCC_FLAGS += nvcc_append.split()
+
+    if FORCE_CXX11_ABI:
+        torch._C._GLIBCXX_USE_CXX11_ABI = True
 
     ABI = 1 if torch._C._GLIBCXX_USE_CXX11_ABI else 0
     CXX_FLAGS += [f"-D_GLIBCXX_USE_CXX11_ABI={ABI}"]
